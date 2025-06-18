@@ -1,6 +1,6 @@
-pragma solidity ^0.8.20;
+pragma solidity 0.8.30;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {aRToken} from "../src/aRToken.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -279,5 +279,80 @@ contract aRTokenTest is Test {
 
         // Verify newMinter does not have the role
         assertFalse(token.hasRole(minterRole, newMinter));
+    }
+
+    function test_CannotDeployWithSameMinterAndBurner() public {
+        vm.expectRevert("Minter and burner must be different addresses");
+        new aRToken(
+            OWNER,
+            TOKEN_NAME,
+            TOKEN_SYMBOL,
+            TOKEN_DECIMALS,
+            MINTER,
+            MINTER, // Same as minter - should fail
+            ADMIN_TRANSFER_DELAY
+        );
+    }
+
+    function test_CannotDeployWithZeroDecimals() public {
+        vm.expectRevert("Decimals must be greater than zero");
+        new aRToken(
+            OWNER,
+            TOKEN_NAME,
+            TOKEN_SYMBOL,
+            0, // Zero decimals - should fail
+            MINTER,
+            BURNER,
+            ADMIN_TRANSFER_DELAY
+        );
+    }
+
+    function test_CannotDeployWithInsufficientAdminDelay() public {
+        vm.expectRevert("Admin transfer delay must be at least MIN_DELAY");
+        new aRToken(
+            OWNER,
+            TOKEN_NAME,
+            TOKEN_SYMBOL,
+            TOKEN_DECIMALS,
+            MINTER,
+            BURNER,
+            12 hours // Less than MIN_DELAY (1 day) - should fail
+        );
+    }
+
+    function test_CannotGrantMinterRoleToBurner() public {
+        bytes32 minterRole = token.MINTER_ROLE();
+
+        vm.startPrank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                aRToken.AccountAlreadyHasBurnerRole.selector,
+                BURNER
+            )
+        );
+        token.grantRole(minterRole, BURNER);
+        vm.stopPrank();
+
+        // Verify BURNER still only has BURNER_ROLE
+        assertTrue(token.hasRole(token.BURNER_ROLE(), BURNER));
+        assertFalse(token.hasRole(token.MINTER_ROLE(), BURNER));
+    }
+
+    function test_CannotGrantBurnerRoleToMinter() public {
+        bytes32 burnerRole = token.BURNER_ROLE();
+
+        vm.startPrank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                aRToken.AccountAlreadyHasMinterRole.selector,
+                MINTER
+            )
+        );
+        token.grantRole(burnerRole, MINTER);
+        vm.stopPrank();
+
+        // Verify MINTER still only has MINTER_ROLE
+        assertTrue(token.hasRole(token.MINTER_ROLE(), MINTER));
+        assertFalse(token.hasRole(token.BURNER_ROLE(), MINTER));
     }
 }
